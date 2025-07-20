@@ -20,6 +20,7 @@
   "homepage": "https://github.com/Dhakshin2007/entry_system#readme",
   "dependencies": {
     "express": "^5.1.0",
-    "googleapis": "^153.0.0"
+    "googleapis": "^153.0.0",
+    "nodemailer": "^7.0.5"
   }
 }
