@@ -1,0 +1,5 @@
+# Do not track sensitive or large files
+credentials.json
+students.json
+node_modules/
+.env

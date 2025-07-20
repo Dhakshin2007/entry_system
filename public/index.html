@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>College Check-In/Out System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg-color-light: #f9f9f9;
+      --text-color-light: #333;
+      --bg-color-dark: #121212;
+      --text-color-dark: #eee;
+      --primary-color: #4CAF50;
+      --checked-in-color: #4CAF50;   /* Green */
+      --checked-out-color: #f44336;  /* Red */
+      --registered-color: #FF9800;   /* Orange */
+    }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: var(--bg-color-light);
+      color: var(--text-color-light);
+      transition: background-color 0.3s, color 0.3s;
+    }
+    .dark-theme {
+      background-color: var(--bg-color-dark);
+      color: var(--text-color-dark);
+    }
+    #theme-toggle {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #scanner-container {
+      width: 100%;
+      max-width: 640px;
+      height: 480px;
+      border: 1px solid #ccc;
+      margin: 20px auto;
+      position: relative;
+      background: #000;
+    }
+    #scanner-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #message {
+      font-size: 1.2em;
+      margin: 10px;
+    }
+    #registrationForm {
+      display: none;
+      margin: 20px auto;
+      max-width: 640px;
+      border: 1px solid #aaa;
+      padding: 10px;
+      text-align: left;
+      background: #fff;
+      color: #333;
+    }
+    .dark-theme #registrationForm {
+      background: #222;
+      color: #eee;
+      border-color: #555;
+    }
+    #registrationForm label {
+      display: block;
+      margin: 5px 0;
+    }
+    input[type="text"],
+    input[type="tel"] {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0 10px 0;
+      box-sizing: border-box;
+    }
+    #photo-capture {
+      margin-bottom: 10px;
+    }
+    #captureVideo {
+      width: 100%;
+      max-width: 320px;
+    }
+    #captureCanvas {
+      display: none;
+    }
+    #photoPreview img {
+      width: 100%;
+      max-width: 320px;
+      margin-top: 10px;
+    }
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    #resultTable {
+      margin: 20px auto;
+      max-width: 640px;
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #resultTable th, #resultTable td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <button id="theme-toggle">Toggle Theme</button>
+  <h1>College Check-In/Out System</h1>
+  <div id="scanner-container"></div>
+  <p id="message">Initializing scanner...</p>
+
+  <!-- Result Table to display scan details -->
+  <div id="resultDisplay" style="display:none;">
+    <h2>Scan Result</h2>
+    <table id="resultTable">
+      <tr>
+        <th>Name</th>
+        <td id="resultName"></td>
+      </tr>
+      <tr>
+        <th>Entry Number</th>
+        <td id="resultEntryNumber"></td>
+      </tr>
+      <tr>
+        <th>Phone Number</th>
+        <td id="resultPhone"></td>
+      </tr>
+      <tr>
+        <th>Status</th>
+        <td id="resultStatus"></td>
+      </tr>
+    </table>
+    <button id="returnHome">Return Home</button>
+  </div>
+
+  <!-- Registration Form with Photo Capture -->
+  <div id="registrationForm">
+    <h2>Student Registration</h2>
+    <form id="regForm">
+      <label>Entry Number: <input type="text" id="regEntryNumber" readonly></label>
+      <label>Name: <input type="text" id="regName" required autofocus></label>
+      <label>Batch: <input type="text" id="regBatch" required></label>
+      <label>Branch: <input type="text" id="regBranch" required></label>
+      <label>Course: <input type="text" id="regCourse" required></label>
+      <label>Phone: 
+        <input type="tel" id="regPhone" required pattern="\d{10}" title="Enter exactly 10 digits">
+      </label>
+      <label>Parent/Guardian Phone: 
+        <input type="tel" id="regParentPhone" required pattern="\d{10}" title="Enter exactly 10 digits">
+      </label>
+      <div id="photo-capture">
+        <p>Capture Photo (optional):</p>
+        <video id="captureVideo" autoplay playsinline></video>
+        <br>
+        <button type="button" id="captureButton">Capture Photo</button>
+        <canvas id="captureCanvas"></canvas>
+        <div id="photoPreview"></div>
+      </div>
+      <input type="hidden" id="regPhoto" name="regPhoto">
+      <button type="submit">Register</button>
+    </form>
+  </div>
+
+  <!-- Include Quagga2 from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+  <script>
+    // Theme toggle logic.
+    const themeToggle = document.getElementById('theme-toggle');
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark-theme');
+    });
+
+    // Ensure getUserMedia is supported.
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      document.getElementById('message').innerText = "getUserMedia not supported in this browser.";
+      throw new Error("getUserMedia not supported.");
+    }
+
+    // Base Quagga configuration.
+    const quaggaConf = {
+      inputStream: {
+        name: "Live",
+        type: "LiveStream",
+        target: document.getElementById('scanner-container'),
+        constraints: {
+          width: { min: 640 },
+          height: { min: 480 },
+          facingMode: "environment",
+          aspectRatio: { min: 1, max: 2 }
+        }
+      },
+      decoder: {
+        readers: ["code_128_reader", "code_39_reader", "ean_reader"]
+      },
+      frequency: 5
+    };
+
+    let scanDebounce = false;
+
+    // Enumerate available video devices.
+    navigator.mediaDevices.enumerateDevices()
+      .then(devices => {
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        console.log("Available video devices:", videoDevices);
+
+        let selectedDeviceId = null;
+        for (let device of videoDevices) {
+          if (device.label.toLowerCase().includes("back") || device.label.toLowerCase().includes("env")) {
+            selectedDeviceId = device.deviceId;
+            break;
+          }
+        }
+        if (!selectedDeviceId && videoDevices.length > 0) {
+          selectedDeviceId = videoDevices[0].deviceId;
+        }
+        console.log("Selected deviceId:", selectedDeviceId);
+        if (selectedDeviceId) {
+          quaggaConf.inputStream.constraints.deviceId = { exact: selectedDeviceId };
+        }
+        Quagga.init(quaggaConf, function(err) {
+          if (err) {
+            console.error("Quagga init error:", err);
+            document.getElementById('message').innerText = "Error initializing scanner: " + err;
+            return;
+          }
+          console.log("Quagga initialized successfully.");
+          document.getElementById('message').innerText = "Scanner ready. Point the camera to a barcode.";
+          Quagga.start();
+        });
+      })
+      .catch(err => {
+        console.error("Error enumerating devices:", err);
+        document.getElementById('message').innerText = "Error accessing camera devices: " + err;
+      });
+
+    // onDetected callback.
+    Quagga.onDetected(function(result) {
+      if (scanDebounce) return;
+      scanDebounce = true;
+      const entryNumber = result.codeResult.code;
+      console.log("Barcode detected:", entryNumber);
+      document.getElementById('message').innerText = "Detected: " + entryNumber;
+      
+      // Stop scanning and hide the scanner container.
+      Quagga.stop();
+      document.getElementById('scanner-container').style.display = 'none';
+      
+      // Send the scanned entryNumber to the backend.
+      fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryNumber })
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log("Backend response:", data);
+        // If student is not registered, show registration form.
+        if (data.message === "Student not registered") {
+          document.getElementById('registrationForm').style.display = 'block';
+          document.getElementById('regEntryNumber').value = entryNumber;
+          document.getElementById('message').innerText = "Student not registered. Please register.";
+        } else {
+          // Otherwise, display a result table with the student info.
+          document.getElementById('resultDisplay').style.display = 'block';
+          document.getElementById('resultName').innerText = data.student.name;
+          document.getElementById('resultEntryNumber').innerText = data.student.entryNumber;
+          document.getElementById('resultPhone').innerText = data.student.phone;
+          const statusTd = document.getElementById('resultStatus');
+          statusTd.innerText = data.student.lastStatus;
+          // Set color based on status.
+          if (data.student.lastStatus === "Checked In") {
+            statusTd.style.color = "green";
+          } else if (data.student.lastStatus === "Checked Out") {
+            statusTd.style.color = "red";
+          } else if (data.student.lastStatus === "Registered") {
+            statusTd.style.color = "orange";
+          }
+          document.getElementById('message').innerText = "";
+        }
+      })
+      .catch(err => {
+        console.error("Error processing scan:", err);
+        document.getElementById('message').innerText = "Error processing scan.";
+      });
+    });
+
+    // onProcessed handler (optional for debugging)
+    Quagga.onProcessed(function(result) {
+      // Uncomment to log frame details: console.log("Frame processed:", result);
+    });
+
+    // Handle registration form submission.
+    document.getElementById('regForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const entryNumber = document.getElementById('regEntryNumber').value;
+      const name = document.getElementById('regName').value;
+      const batch = document.getElementById('regBatch').value;
+      const branch = document.getElementById('regBranch').value;
+      const course = document.getElementById('regCourse').value;
+      const phone = document.getElementById('regPhone').value;
+      const parentPhone = document.getElementById('regParentPhone').value;
+      const photo = document.getElementById('regPhoto').value; // Base64 photo data
+      
+      fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryNumber, name, batch, branch, course, phone, parentPhone, photo })
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log("Registration response:", data);
+        document.getElementById('message').innerText = "Registration successful. Returning home.";
+        document.getElementById('registrationForm').style.display = 'none';
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+      })
+      .catch(err => {
+        console.error("Registration error:", err);
+        document.getElementById('message').innerText = "Registration failed.";
+      });
+    });
+
+    // Photo capture functionality.
+    // Access camera for photo capture when registration form is shown.
+    const captureVideo = document.getElementById('captureVideo');
+    const captureButton = document.getElementById('captureButton');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const photoPreview = document.getElementById('photoPreview');
+    const regPhotoInput = document.getElementById('regPhoto');
+
+    // When registration form is shown, request camera stream for photo capture.
+    function startPhotoCapture() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then(stream => {
+            captureVideo.srcObject = stream;
+          })
+          .catch(err => {
+            console.error("Error accessing camera for photo capture:", err);
+          });
+      }
+    }
+    // Start photo capture when registration form is shown.
+    document.getElementById('registrationForm').addEventListener('transitionend', startPhotoCapture);
+
+    // Alternatively, start when the registration form becomes visible.
+    if (document.getElementById('registrationForm').style.display !== 'none') {
+      startPhotoCapture();
+    }
+
+    captureButton.addEventListener('click', () => {
+      captureCanvas.width = captureVideo.videoWidth;
+      captureCanvas.height = captureVideo.videoHeight;
+      const context = captureCanvas.getContext('2d');
+      context.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+      // Get the image as a Base64 string.
+      const imageData = captureCanvas.toDataURL('image/png');
+      regPhotoInput.value = imageData;
+      photoPreview.innerHTML = `<img src="${imageData}" alt="Captured Photo">`;
+      // Stop the capture video stream.
+      let stream = captureVideo.srcObject;
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    });
+
+    // Return Home button.
+    document.getElementById('returnHome').addEventListener('click', () => {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>
+<!-- End of HTML document -->
+<!-- This HTML document contains the complete code for a College Check-In/Out System with QR code scanning and student registration functionality. It includes a dark mode toggle, video stream for scanning, and a form for student registration with photo capture. The JavaScript code handles the camera access, barcode detection, and form submission to the backend. -->
